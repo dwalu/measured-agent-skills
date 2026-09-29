@@ -80,3 +80,14 @@ description as the literal string `">-"` and then reports the skill valid, so th
 - Cross-references use the bare skill name and, where useful, a section number. The
   validator fails a `§N` pointing at a section that does not exist — so section numbering
   is a contract, not formatting.
+
+## License
+
+[MIT](LICENSE). Reuse, adapt and redistribute freely, including commercially;
+keep the copyright notice.
+
+One caveat that is not a legal one: the value here is that the claims were
+measured, on the versions `PROVENANCE.md` stamps. A copy that drifts from its
+measurements is worse than no copy, so if you change a claim, re-measure it — and
+if you cannot reproduce one, say so in the skill rather than deleting it. "Did not
+reproduce on X" is itself a measurement.
