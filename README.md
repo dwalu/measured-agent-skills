@@ -1,5 +1,7 @@
 # measured-agent-skills
 
+[![License](https://img.shields.io/github/license/dwalu/measured-agent-skills)](LICENSE)
+
 Portable engineering knowledge as [Agent Skills](https://agentskills.io) — `SKILL.md`
 files with YAML `name`/`description` frontmatter, loaded on demand by the host agent
 rather than pasted into every prompt.
