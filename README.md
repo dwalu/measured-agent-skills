@@ -1,4 +1,4 @@
-# agent-skills
+# measured-agent-skills
 
 Portable engineering knowledge as [Agent Skills](https://agentskills.io) — `SKILL.md`
 files with YAML `name`/`description` frontmatter, loaded on demand by the host agent
