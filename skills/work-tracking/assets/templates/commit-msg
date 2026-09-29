@@ -1,0 +1,11 @@
+#!/bin/sh
+# commit-msg hook: require a '{{TRAILER}}: <id>' trailer tying the commit to a tracked task.
+# Exemptions: merge/revert commits, or any message containing [skip-task].
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+node scripts/validate-tracking.mjs --commit-msg "$1" || {
+  echo "" >&2
+  echo "Commit blocked: add a trailer line '{{TRAILER}}: <id>' (e.g. {{TRAILER}}: {{PREFIX}}00.1-I2)" >&2
+  echo "referencing an active task in {{DIR}}/, or add [skip-task] for non-task commits." >&2
+  exit 1
+}

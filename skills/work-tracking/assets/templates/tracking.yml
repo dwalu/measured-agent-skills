@@ -1,0 +1,21 @@
+name: tracking
+
+# No path filter, on purpose. If this becomes a required check, a required check
+# that never runs blocks the PR forever — and a filter on {{DIR}}/** is
+# exactly how a code-only PR ends up with no report at all. The job is a
+# checkout, a node, and one dependency-free script: it costs seconds.
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate work-tracking consistency
+        run: node scripts/validate-tracking.mjs
