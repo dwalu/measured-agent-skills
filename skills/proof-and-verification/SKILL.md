@@ -358,6 +358,47 @@ proves nothing.
 
 ---
 
+## 6b. A proof of the parts is not a proof of the join
+
+**When two features are built an increment apart, every individual proof can pass
+while the thing they form together is broken.** Neither increment's proof list
+names the join, because neither increment owns it.
+
+Two instances, found the same week, both reaching production:
+
+**A "supersede" that superseded nothing.** One increment added a mint that
+inserted a new row and inherited the old row's counter. A later increment added a
+detector refusing two live rows. Each was proved. Together: the mint's own rule
+required the predecessor to be *unexpired*, so every legitimate resend produced
+exactly the state the detector refuses — a nine-minute outage on three
+procedures, reachable by following the product's own on-screen advice.
+
+**A cooldown whose arithmetic was proved to the millisecond.** The policy function
+was pure, clock-injected and unit-tested at its boundary; the row-read beneath it
+had its own clock-seeded integration tests. The function joining them had no test
+at all, because it was module-private and ran behind a scheduler.
+
+**Why the existing tests could not catch either.** In both, a fixture *built the
+broken state and then stopped* — asserting a row count, or reading the table with
+a privileged client rather than through the code path under test. In one case the
+fixture's own comment said it produced the state the other property detects, and
+still nobody read the table back afterwards.
+
+**How to apply.**
+
+- After a test produces an interesting state, **call the real reader before the
+  test ends** — through the repo or the router, not the admin client. A count is
+  not a read.
+- When a fixture's comment says it produces the state another property detects,
+  **that sentence is the missing test.** Write it.
+- When two increments share a table, a queue or a file, **one proof must cross the
+  seam in the direction the product does.**
+- At review time, ask of each increment: *what reads this next, and does anything
+  exercise that?* The answer is usually "a different increment's deliverable, and
+  no".
+
+---
+
 ## 7. A scope claim owes an enumeration
 
 Before any mechanism — a trigger, a database default, an extension — takes over a
