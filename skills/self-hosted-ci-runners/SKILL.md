@@ -58,24 +58,45 @@ knowing before you read a run:
 - Adding a lane does nothing for a *single* run whose critical path is one long
   job. It only helps concurrent runs. Cutting the long job is the other lever.
 
-### The fact that bites outside CI
+### The fact that bites outside CI — and the setting that removes it
 
-**A running job publishes the guest's service ports on the host's loopback.**
-While any job with a `services:` block runs, `127.0.0.1:5432` is the *runner's*
-Postgres — not your development one. The symptom is a local tool failing
-authentication, or finding an unrecognisable schema, while `docker exec … psql`
-works perfectly; and it comes and goes with CI.
+**By default a running job publishes the guest's ports on the host's
+loopback.** Lima with no `portForwards` rule forwards *every* port a guest
+process listens on to `127.0.0.1` on the host. So while a job runs,
+`127.0.0.1:5432` is the *runner's* Postgres and not your development one, and
+the same goes for its Redis, mail catcher, app and anything else it starts.
+The symptom is a local tool failing authentication, or finding an
+unrecognisable schema, while `docker exec … psql` works, and it comes and goes
+with CI.
 
-```bash
-lsof -nP -iTCP:5432 -sTCP:LISTEN     # a VM process here means a job is running
+**The fix is to forward nothing.** A runner VM serves nobody on the host. SSH
+is exempt from the rules, and traffic the guest starts itself (to a cache on
+the host's gateway address) is not a forward. In Lima, an ignore-all rule in
+the instance's `lima.yaml`, effective on the next start:
+
+```yaml
+portForwards:
+- guestIP: "127.0.0.1"   # also matches 0.0.0.0, :: and ::1 binds
+  proto: any
+  ignore: true
+- guestIP: "0.0.0.0"
+  guestIPMustBeZero: false   # any other interface
+  proto: any
+  ignore: true
 ```
 
-On macOS `localhost` resolves to `::1` and reaches Docker, while `127.0.0.1` is
-IPv4 and the VM gets there first. **Write `localhost`, never `127.0.0.1`, in
-anything that talks to your local stack** — and derive URLs from config rather
-than hardcoding a host. The dangerous outcome is not the auth failure; it is the
-case where the credentials happen to match and your reset script runs `DROP
-DATABASE` inside a CI runner.
+**Prove it with a probe that can fail**, run before the change as well as
+after. "Nothing is forwarded right now" passes on a broken config whenever no
+job is running.
+
+**Still write `localhost`, never `127.0.0.1`,** in anything that talks to your
+local stack. On macOS `localhost` resolves to `::1` and reaches Docker, and it
+stays safe on a VM rebuilt without the rule.
+
+> What it cost before the fix (a screenshot run rendering CI's app, a VM stopped
+> mid-job, a reset script one password from `DROP DATABASE` in the runner), the
+> probe, the measurement, and why moving local ports is not a substitute are in
+> **`references/port-forwarding.md`**.
 
 ## Is it the machine or my diff?
 
@@ -446,7 +467,10 @@ Prefer **cloning a healthy VM** to rebuilding. Rebuild only when there is no
 healthy one left. The shape, whatever your VM tool:
 
 1. A Linux VM, 4 vCPU / 6–8 GiB, no host mounts, a fixed disk large enough for
-   image builds and a dependency store.
+   image builds and a dependency store, and **no port forwarding** (see "The
+   fact that bites outside CI"). Put the rule in place before its first boot,
+   with `limactl create`, edit `lima.yaml`, then `limactl start`, or the
+   equivalent. A clone inherits the config, so it inherits the rule.
 2. **Docker Engine inside the VM** — not a desktop daemon on the host. Service
    containers must be reachable on the runner's own loopback.
 3. Register the runner with the labels your workflows match, install it as a
