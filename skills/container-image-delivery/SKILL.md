@@ -184,6 +184,20 @@ The optional-peer marking is also the safety argument, and a strong one: an
 optional peer is a dependency its dependent states in its own manifest that it
 can run without.
 
+**A package in the store is not a package your package can run.** The optional-peer
+pull above leaves `prisma` and `tsx` sitting in `node_modules/.pnpm` after `--prod`.
+That was reported as "both survive", and an assertion was written to check that
+`.pnpm` holds them. The first CI build then failed at
+`pnpm --filter <pkg> exec prisma generate` with `Command "prisma" not found`. Both
+were `devDependencies` of that package, and pnpm links a bin only into the package
+that declares it. The store is shared by the workspace, but resolution is per
+package. So test from the directory that runs the tool:
+`[ -x <pkg>/node_modules/.bin/<tool> ]`, or a real `require` with `<pkg>` as the
+working directory (not `require.resolve` with `{paths}`, see
+`references/tracing-and-linkers.md`). Before cutting `devDependencies`, list every
+command the image runs (`--filter X <script>`, `exec`) and confirm that each tool
+is a runtime dependency of package X itself.
+
 **A second flag with the same failure shape.**
 `pnpm install --frozen-lockfile --filter "<pkg>..."` does **not** exclude the
 workspace **root** importer. The root `package.json` is an importer like any other,
