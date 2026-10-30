@@ -210,6 +210,36 @@ legitimately un-forced, and is the only mechanism that covers a table forced
 *mid-run*. The cost is that any statement legitimately touching a forced table now
 raises, so existing callers must be allowlisted first.
 
+**Correction: do not put it in a migration file.** The paragraph above reads as
+advice to migrate with `row_security = off`, and that is wrong for any migration that
+will ever run against a fresh database. Postgres raises when a policy *would* apply to
+the statement, and decides that at **plan time**, before a row is read. An empty table
+refuses exactly as a populated one does. Measured on **16.14** as a
+`NOSUPERUSER NOBYPASSRLS` owner, on a FORCEd table holding **0 rows**, in one
+rolled-back transaction:
+
+| session | `UPDATE t SET x = 1 WHERE x IS NULL` |
+|---|---|
+| default (`row_security = on`) | `UPDATE 0` |
+| `row_security = off` | `ERROR:  query would be affected by row-level security policy for table "t"` (a `SELECT count(*)` too) |
+| `row_security = off`, table `NO FORCE` | `UPDATE 0` |
+| `row_security = off`, as a `BYPASSRLS` role | `UPDATE 0` |
+
+Every CI run, every RLS drill and every new install starts from an empty database, so
+a backfill there is *correctly* empty, and the setting fails all of them while
+catching nothing. In one project this closed a proposal to set it for every
+migration. **24** migrations written after the first `FORCE` contained a top-level
+`UPDATE`, `INSERT` or `DELETE`, and migrations are immutable, so exempting them meant
+a permanent allowlist or a timestamp cutoff that nobody could review.
+
+Use the loud mode for a hand-run backfill against a populated database. For a
+migration, use a role with `BYPASSRLS`, or un-FORCE for the duration of the deploy
+(§2's bracket) and keep `SET NOT NULL` as the assertion. The bracket has one blind
+spot: a migration that re-`FORCE`s a table *inside* it. A later backfill in the same
+run then writes nothing, silently. Measured: **0 of 5** rows, against **5 of 5**
+without the in-file `FORCE`, with the post-deploy verification green both times. So
+detect a re-`FORCE` inside the bracket by name.
+
 **The diagnostic rule that follows:** when an RLS error disappears after you add a
 flag, check whether the flag changed *raise* into *filter* before believing it.
 The question is not "does it succeed now" but "how many rows did it return, and
@@ -363,7 +393,8 @@ interpolates as literal text.
 ## Version dependence
 
 - **Measured on PG16:** the `ADD COLUMN` rewrite table (§2), the trigger-disable
-  privilege table (§5), the ordering/tiebreaker table (§6).
+  privilege table (§5), the ordering/tiebreaker table (§6). **On 16.14:** the
+  `row_security = off` empty-table refusal table (§4).
 - **PG15+:** `GRANT SET ON PARAMETER session_replication_role`.
 - **PG13+:** `ALTER COLUMN … DROP EXPRESSION`.
 - **PG11+:** the non-volatile `ADD COLUMN` default stored as a "missing value".
