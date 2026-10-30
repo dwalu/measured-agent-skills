@@ -253,6 +253,29 @@ grouping still leak it. Three things that do work in fish:
 Option 1 is the one to reach for, because the other two suppress the diagnosis
 rather than handling it — which is exactly the §5 mistake one level down.
 
+**Under `set -e`, a `read` with no input exits before the `die` that explains it.**
+The usual prompt-or-die shape is silent in exactly the case it exists for:
+
+```bash
+if [ -z "$ACTOR" ]; then printf 'Actor: '; read -r ACTOR; fi
+[ -n "$ACTOR" ] || die "actor is required"
+```
+
+With stdin closed or at EOF (a CI step, a runbook that left out a flag,
+`</dev/null`), `read` returns non-zero. It is the last command in the `if` body, so
+`set -e` aborts there. Measured in bash 5.3.20 and zsh 5.9.2 with `</dev/null`:
+
+| | output | exit |
+|---|---|---|
+| `read -r ACTOR` | `Actor: ` only | **1** |
+| `read -r ACTOR \|\| true` | `Actor: ERR: actor is required` | 2 (the `die`) |
+| either, with input piped in | `got alice` | 0 |
+
+Interactive use works, which is why it survives review. Put `|| true` on every such
+`read`, the `[y/N]` confirmation included. Test with `</dev/null` and assert the
+**message**: a test that checks only for a non-zero exit passes on the silent version.
+Fish has no `set -e`, so this does not arise there.
+
 ## Related
 
 - `proof-and-verification` — the discipline these are instances of, and §5 there
