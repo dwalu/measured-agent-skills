@@ -300,6 +300,15 @@ confident, wrong answer rather than an error — and dev and CI, which usually o
 the database as superuser, would never see it missing. This is the §3–§5 CI trap
 again, in a read path.
 
+**And autovacuum has an `xact_start` too.** "The oldest open transaction" is not "the
+oldest client transaction". Measured on 16: after deleting half of a 3M-row table, an
+`autovacuum worker` running `VACUUM ANALYZE` appeared within **5 s** with
+`xact_start IS NOT NULL`, and held the watermark back. Past a lag threshold that
+looks like writers stalling, and it shows up as a failure nobody can reproduce on
+demand. Filter **`backend_type = 'client backend'`**. Autovacuum cannot be summoned
+on cue, so test the predicate on synthetic rows: alias a `VALUES` list as
+`pg_stat_activity` and include a non-client row.
+
 **`pg_dump` holds one snapshot for the whole backup.** So a long dump keeps a
 transaction open for its entire duration, and any watermark derived from the oldest
 open transaction does not advance until the backup finishes. Budget for that before
@@ -342,6 +351,22 @@ SET LOCAL enable_bitmapscan = off;
 
 State the guarantee as *the order holds under every plan*: the `ORDER BY` provides
 that, the index only provides the speed.
+
+**A bare `ORDER BY` name matches an output alias before the input column.** So a
+column cast for transport (to a driver or JSON) under its own name sorts as the
+cast type. Measured on 16.14 over `seq bigint` values 59, 377 and 9:
+
+| query | max returned |
+|---|---|
+| `SELECT seq::text AS seq FROM t ORDER BY seq DESC LIMIT 1` | **`9`**, a text sort |
+| `SELECT c.seq::text AS seq FROM t c ORDER BY seq DESC LIMIT 1` | **`9`**, a table alias in `FROM` is not enough |
+| `SELECT t.seq::text AS seq FROM t ORDER BY t.seq DESC LIMIT 1` | `377` |
+
+Qualify the `ORDER BY` itself. Every test passes until the values cross a digit
+boundary. In one case a "latest" lookup shipped this, and every backup manifest would
+have recorded a stale head after the counter crossed a digit. Its CI drill passed
+because the counter never got that far. So a test of "the largest" must straddle a
+power of ten, for example with `setval` just below one.
 
 ## 7. Session, GUC and psql mechanics that rewrite your SQL
 
@@ -394,7 +419,8 @@ interpolates as literal text.
 
 - **Measured on PG16:** the `ADD COLUMN` rewrite table (§2), the trigger-disable
   privilege table (§5), the ordering/tiebreaker table (§6). **On 16.14:** the
-  `row_security = off` empty-table refusal table (§4).
+  `row_security = off` empty-table refusal table (§4) and the `ORDER BY` alias table
+  (§6).
 - **PG15+:** `GRANT SET ON PARAMETER session_replication_role`.
 - **PG13+:** `ALTER COLUMN … DROP EXPRESSION`.
 - **PG11+:** the non-volatile `ADD COLUMN` default stored as a "missing value".
