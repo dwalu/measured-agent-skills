@@ -20,6 +20,9 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KEEP = process.argv.includes('--keep');
 const REPO = mkdtempSync(join(tmpdir(), 'work-tracking-selftest-'));
+// Clean up on EVERY exit, including an uncaught throw. Removing the tree only at
+// the end of the script leaked one scratch repo per crashed run.
+process.on('exit', () => { if (!KEEP) rmSync(REPO, { recursive: true, force: true }); });
 
 let passed = 0;
 const failures = [];
@@ -87,6 +90,13 @@ writeFileSync(SRC, 'export const x = 1;\n');
 const init = run('node', [join(HERE, 'init.mjs')]);
 check('init scaffolds without error', () =>
   init.code === 0 ? null : `exit ${init.code}\n      ${init.out}`);
+
+// Every later check reads the scaffold. Without it they cannot mean anything, so
+// stop here with init's own error rather than an ENOENT on a file it never wrote.
+if (init.code !== 0) {
+  console.log(`❌ init failed — nothing else can run\n\n   ✗ ${failures[0]}\n`);
+  process.exit(1);
+}
 
 pristineFlow = readFileSync(FLOW, 'utf8');
 pristineSrc = readFileSync(SRC, 'utf8');
@@ -311,6 +321,5 @@ if (failures.length) {
 }
 
 if (KEEP) console.log(`\nscratch repo kept at ${REPO}`);
-else rmSync(REPO, { recursive: true, force: true });
 
 process.exit(failures.length ? 1 : 0);

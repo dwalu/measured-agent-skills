@@ -21,7 +21,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TPL = join(HERE, 'templates');
+// Templates live in the skill's assets/, a sibling of scripts/ — not under it.
+const TPL = join(HERE, '..', 'assets', 'templates');
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
