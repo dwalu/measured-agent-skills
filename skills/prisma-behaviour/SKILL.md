@@ -90,6 +90,27 @@ The same client-side fill is why a hand-written `INSERT` that omits `updated_at`
 dies on `null value in column "updated_at"` *before reaching the CHECK you are
 drilling*; if you are drilling a refusal, that reads as a pass.
 
+**But `@updatedAt` does not make an `upsert` write.** `upsert({ where, create,
+update: {} })` against an **existing** row emits three `SELECT`s and **no
+`UPDATE`**, so `updated_at` is unchanged, although the model declares
+`@updatedAt`. Against an absent row it emits the `INSERT`. So a "create on first
+access" read path built this way stays a read. The annotation makes the opposite
+answer look likely, which is why it needs a query log rather than an argument.
+
+**Reading loses the microseconds too.** That is the read half of consequence 2. A
+`timestamp(6)` column comes back as a JS `Date`, truncated to milliseconds before
+app code sees it, even when the database stamped it with `clock_timestamp()`. The
+same row, measured: `2026-10-30 09:00:41.27802` as `created_at::text`, and
+`2026-10-30T09:00:41.278Z` through the model. A keyset cursor that carries the
+timestamp through JavaScript, such as `created_at < c OR (created_at = c AND seq < s)`,
+therefore compares against a truncated instant. It skips (or repeats, depending on
+direction) every row in the boundary millisecond. Resolve the cursor inside the query,
+`(created_at, seq) < (SELECT created_at, seq FROM t WHERE id = $1::uuid)`, and check
+that the cursor row exists first. A missing row makes the comparison NULL,
+which returns an empty page that reads as "the end". The red proof is rows inside
+one millisecond spanning a page boundary: a cursor built from
+`date_trunc('milliseconds', …)` must fail it.
+
 **`@default(dbgenerated(...))` is a default, not a constraint** — the field stays
 writable in the generated create input. See §2.
 
@@ -202,6 +223,22 @@ case in one `tsc --strict` probe. For any helper that must run inside a
 transaction, brand the parameter type and never accept an `Omit<>` of the full
 client — and assert the *behaviour* separately, because a type is not a proof
 about Postgres.
+
+**`contains`, `startsWith` and `endsWith` do not escape `LIKE` wildcards.** The value
+is wrapped in `%` and bound as it is:
+
+```
+… WHERE "tenants"."name"::text LIKE $1   params ["%a_b%c%"]   -- contains: "a_b%c"
+… WHERE "tenants"."name" ILIKE $1        params ["%a_b%c%"]   -- + mode: "insensitive"
+… WHERE "tenants"."name"::text LIKE $1   params ["a_b%"]      -- startsWith: "a_b"
+```
+
+So a user-typed `_` matches any one character and a `%` matches anything. The filter
+typechecks and returns extra rows without error. Escape user text (`\`, `%`, `_`)
+before passing it in. Prove the escape with a fixture name that contains `_`, and a
+search whose unescaped `_` would also match a neighbouring row. This was believed the
+other way twice in one day, once in a design doc and once in a commit message, and a
+literal-match test caught it.
 
 ## 3. Raw SQL through Prisma
 
@@ -440,7 +477,9 @@ next added column has the same problem.
 
 - **Prisma 6.19.3:** `@default(uuid(7))` engine-generated with a process-global
   monotonic counter (and `uuid(7)` has to exist in your version at all before any
-  of §1's v7 advice is reachable); a bound `$N` arriving as `text`.
+  of §1's v7 advice is reachable); a bound `$N` arriving as `text`; a
+  `timestamp(6)` read back truncated to milliseconds (§1); `contains` /
+  `startsWith` sent to `LIKE` unescaped (§2).
 - **PostgreSQL 16.14:** the `uuid = text` refusal; `428C9`; no in-place
   `ALTER COLUMN … SET GENERATED`.
 - **Version-sensitive but unstamped — re-verify with a query log before relying
