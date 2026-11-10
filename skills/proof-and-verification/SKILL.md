@@ -237,6 +237,19 @@ reverting the one thing under test and checking **that** case reddens and its
 neighbours do not. The failure mode is inverted: **the more guards a procedure has,
 the easier it is to get a green deny suite that proves nothing.**
 
+**Name the base by commit, never by `HEAD`.** A red/green script for a one-line
+regex fix built its "main" copy with `git archive HEAD` and its green side from the
+working tree. Run before the commit, it was right: 3 FAIL on main, 44 OK with the
+fix. Then the fix was committed and the same script re-run to prove the committed
+bytes — `HEAD` was now the fix, so "red" ran fixed code, went **green**, and printed
+`PROOF FAILED` over a correct fix. The mirror is worse: had the verdict only checked
+green, it would have passed on any tree. Resolve both sides to SHAs up front (`git
+merge-base <branch> origin/main` for the base, `git rev-parse <branch>` for the
+fix), run **each** in its own `git archive <sha>` copy so the working tree cannot
+leak in, refuse when base and fix are the same commit or the fix changes nothing
+outside `tests/`, and print both SHAs in the output so the reader can see what was
+compared. **A ref that moves is not a baseline.**
+
 ---
 
 ## 5. Nothing ran, and the silence read as a result
